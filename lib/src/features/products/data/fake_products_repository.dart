@@ -4,6 +4,7 @@ import 'package:ecommerce_app/src/constants/test_products.dart';
 import 'package:ecommerce_app/src/features/products/domain/product.dart';
 import 'package:ecommerce_app/src/utils/delay.dart';
 import 'package:ecommerce_app/src/utils/in_memory_store.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class FakeProductsRepository {
@@ -22,7 +23,6 @@ class FakeProductsRepository {
   }
 
   Future<List<Product>> fetchProductsList() async {
-    await delay(addDelay);
     return Future.value(_products.value);
   }
 
@@ -47,6 +47,22 @@ class FakeProductsRepository {
       products[index] = product;
     }
     _products.value = products;
+  }
+
+  // Search for products where the title contain the search query
+
+  Future<List<Product>> searchProducts(String query) async {
+    assert(
+      _products.value.length <= 100,
+      'Client-side search should onlu be performed if the number of products is small'
+      'Consider doing server-side seatch for larger datasets',
+    );
+    // Get all products
+    final productsList = await fetchProductsList();
+    // Match all products where the title contains the query
+    return productsList
+        .where((product) => product.title.contains(query.toLowerCase()))
+        .toList();
   }
 
   static Product? _getProduct(List<Product> products, String id) {
@@ -79,4 +95,20 @@ final productProvider =
     StreamProvider.autoDispose.family<Product?, String>((ref, id) {
   final productsRepository = ref.watch(productsRepositoryProvider);
   return productsRepository.watchProduct(id);
+});
+
+final productsListSearchProvider = FutureProvider.autoDispose
+    .family<List<Product>, String>((ref, query) async {
+  ref.onDispose(() => debugPrint('disposed: $query'));
+  ref.onCancel(() => debugPrint('cancel: $query'));
+  final link = ref.keepAlive();
+  Timer(const Duration(seconds: 5), () {
+    link.close();
+  });
+
+  // * debounce/delay network request
+  // * only works in combination a CancelToken
+  await Future.delayed(const Duration(milliseconds: 500));
+  final productsRepository = ref.watch(productsRepositoryProvider);
+  return productsRepository.searchProducts(query);
 });
